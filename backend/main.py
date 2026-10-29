@@ -4,24 +4,32 @@ FastAPI Server providing real Keras 3 Transformer 2017 execution traces to the 3
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional, List
 import uvicorn
+import os
 
-from transformer_keras_2017 import EducationalTransformer2017
+from backend.transformer_keras_2017 import EducationalTransformer2017
 
 app = FastAPI(
     title="Transformer 2017 3D Simulator API",
     description="Backend powered by Keras 3 & TensorFlow extracting genuine forward-pass traces.",
-    version="1.0.0"
+    version="2.0.0"
 )
 
-# Enable CORS for frontend
+# CORS: Local development allowlist without unsafe wildcard credentials
+origins = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000"
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -32,9 +40,9 @@ print("Model initialized successfully.")
 
 
 class TraceRequest(BaseModel):
-    source_text: str
+    source_text: str = Field(..., min_length=1, max_length=120)
     target_prompt: Optional[str] = None
-    max_decode_steps: Optional[int] = 4
+    max_decode_steps: Optional[int] = Field(default=4, ge=1, le=8)
 
 
 @app.get("/api/health")
@@ -42,9 +50,15 @@ def health_check():
     return {
         "status": "healthy",
         "backend": "Keras 3 + TensorFlow",
+        "model_name": "EducationalTransformer2017",
         "d_model": model.d_model,
         "num_heads": model.num_heads,
-        "vocab_size": model.vocab_size
+        "d_k": model.d_model // model.num_heads,
+        "d_ff": model.d_ff,
+        "vocab_size": model.vocab_size,
+        "num_encoder_layers": 2,
+        "num_decoder_layers": 2,
+        "notes": "Untrained educational model for architectural demonstration"
     }
 
 
@@ -76,20 +90,23 @@ def get_samples():
 
 @app.post("/api/trace")
 def compute_trace(req: TraceRequest):
-    if not req.source_text.strip():
+    if not req.source_text or not req.source_text.strip():
         raise HTTPException(status_code=400, detail="source_text cannot be empty")
+
     try:
         trace_data = model.run_trace(
-            source_text=req.source_text,
+            source_text=req.source_text.strip(),
             target_prompt=req.target_prompt,
             max_decode_steps=req.max_decode_steps or 4
         )
         return trace_data
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        # Sanitize exception message to avoid exposing internal directory paths
+        err_msg = str(e).split("\n")[0]
+        raise HTTPException(status_code=500, detail=f"Lỗi tính toán mô hình Keras 3: {err_msg}")
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+    uvicorn.run("backend.main:app", host="0.0.0.0", port=8000, reload=False)

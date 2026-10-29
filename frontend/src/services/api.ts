@@ -1,342 +1,168 @@
-import type { TransformerTrace } from '../types/trace';
+import type { TransformerTrace, TraceMetadata } from '../types/trace';
+import { generateDemoTrace } from './demoTrace';
+import { validateTransformerTrace } from './traceValidator';
 
-const API_BASE = 'http://localhost:8000';
+const API_BASE = (import.meta as any).env?.VITE_API_BASE || 'http://localhost:8000';
 
-// Fallback pre-calculated trace (matches genuine Keras 3 forward pass) for instant interactive boot
-export const FALLBACK_TRACE: TransformerTrace = {
-  source_text: "Lắng nghe ý kiến nhóm",
-  d_model: 8,
-  num_heads: 2,
-  d_k: 4,
-  d_ff: 16,
-  vocab: ["<pad>", "<s>", "</s>", "lắng", "nghe", "ý", "kiến", "nhóm", "giải", "quyết", "mâu", "thuẫn", "python", "sql", "code", "mô", "hình", "thấu", "hiểu", "đồng", "thuận", "hòa", "hợp", "kết", "quả"],
-  encoder: {
-    source_tokens: ["lắng", "nghe", "ý", "kiến", "nhóm"],
-    source_ids: [3, 4, 5, 6, 7],
-    embeddings: [
-      [1.1, 0.9, 1.2, 0.8, -0.4, -0.5, -0.3, -0.6],
-      [1.0, 1.1, 0.8, 0.9, -0.5, -0.4, -0.6, -0.3],
-      [0.9, 0.8, 1.0, 1.2, -0.3, -0.5, -0.4, -0.5],
-      [1.2, 1.0, 0.9, 0.7, -0.6, -0.3, -0.5, -0.4],
-      [0.8, 1.2, 1.1, 0.9, -0.4, -0.6, -0.3, -0.5]
-    ],
-    positional_encodings: [
-      [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
-      [0.84, 0.54, 0.31, 0.95, 0.1, 0.99, 0.03, 0.99],
-      [0.91, -0.42, 0.59, 0.81, 0.2, 0.98, 0.06, 0.99],
-      [0.14, -0.99, 0.81, 0.58, 0.29, 0.95, 0.09, 0.99],
-      [-0.76, -0.65, 0.95, 0.31, 0.38, 0.92, 0.12, 0.99]
-    ],
-    embedded_positions: [
-      [1.1, 1.9, 1.2, 1.8, -0.4, 0.5, -0.3, 0.4],
-      [1.84, 1.64, 1.11, 1.85, -0.4, 0.59, -0.57, 0.69],
-      [1.81, 0.38, 1.59, 2.01, -0.1, 0.48, -0.34, 0.49],
-      [1.34, 0.01, 1.71, 1.28, -0.31, 0.65, -0.41, 0.59],
-      [0.04, 0.55, 2.05, 1.21, -0.02, 0.32, -0.18, 0.49]
-    ],
-    layer_1: {
-      q: [
-        [[0.8, 0.6, 0.2, 0.5], [0.7, 0.9, 0.4, 0.3], [0.5, 0.8, 0.7, 0.4], [0.6, 0.5, 0.6, 0.7], [0.7, 0.6, 0.5, 0.6]],
-        [[0.3, 0.4, 0.7, 0.8], [0.5, 0.3, 0.8, 0.6], [0.6, 0.5, 0.5, 0.7], [0.4, 0.7, 0.6, 0.5], [0.8, 0.6, 0.4, 0.3]]
-      ],
-      k: [
-        [[0.7, 0.5, 0.3, 0.6], [0.8, 0.8, 0.3, 0.4], [0.4, 0.7, 0.6, 0.5], [0.5, 0.6, 0.7, 0.6], [0.6, 0.7, 0.4, 0.5]],
-        [[0.4, 0.5, 0.6, 0.7], [0.6, 0.4, 0.7, 0.5], [0.5, 0.6, 0.4, 0.8], [0.5, 0.6, 0.5, 0.6], [0.7, 0.5, 0.5, 0.4]]
-      ],
-      v: [
-        [[1.0, 0.5, 0.4, 0.8], [0.9, 0.7, 0.6, 0.5], [0.6, 0.9, 0.8, 0.4], [0.7, 0.8, 0.5, 0.9], [0.8, 0.6, 0.7, 0.7]],
-        [[0.5, 0.6, 0.9, 0.8], [0.7, 0.5, 0.8, 0.7], [0.8, 0.7, 0.6, 0.9], [0.6, 0.8, 0.7, 0.6], [0.9, 0.7, 0.5, 0.8]]
-      ],
-      attention_weights: [
-        [
-          [0.34, 0.28, 0.16, 0.12, 0.10],
-          [0.26, 0.35, 0.18, 0.11, 0.10],
-          [0.15, 0.20, 0.38, 0.15, 0.12],
-          [0.14, 0.16, 0.22, 0.32, 0.16],
-          [0.12, 0.15, 0.18, 0.21, 0.34]
-        ],
-        [
-          [0.22, 0.30, 0.20, 0.15, 0.13],
-          [0.18, 0.24, 0.28, 0.18, 0.12],
-          [0.16, 0.22, 0.30, 0.18, 0.14],
-          [0.14, 0.17, 0.25, 0.26, 0.18],
-          [0.13, 0.16, 0.20, 0.23, 0.28]
-        ]
-      ],
-      ffn_output: [
-        [0.45, -0.32, 0.88, 0.12, -0.65, 0.41, 0.29, -0.18],
-        [0.52, -0.28, 0.79, 0.18, -0.58, 0.48, 0.33, -0.15],
-        [0.41, -0.35, 0.92, 0.09, -0.71, 0.39, 0.25, -0.21],
-        [0.48, -0.30, 0.84, 0.15, -0.62, 0.44, 0.30, -0.17],
-        [0.50, -0.29, 0.81, 0.16, -0.60, 0.46, 0.31, -0.16]
-      ],
-      layer_output: [
-        [1.12, 0.88, 1.25, 0.79, -0.38, -0.48, -0.29, -0.58],
-        [1.05, 1.12, 0.82, 0.91, -0.49, -0.39, -0.58, -0.28],
-        [0.92, 0.81, 1.03, 1.18, -0.28, -0.49, -0.38, -0.48],
-        [1.18, 1.02, 0.91, 0.72, -0.58, -0.28, -0.49, -0.38],
-        [0.82, 1.19, 1.12, 0.88, -0.38, -0.58, -0.29, -0.48]
-      ]
-    },
-    layer_2: {
-      q: [[[0.7, 0.5, 0.3, 0.6]], [[0.4, 0.5, 0.6, 0.7]]],
-      k: [[[0.7, 0.5, 0.3, 0.6]], [[0.4, 0.5, 0.6, 0.7]]],
-      v: [[[0.7, 0.5, 0.3, 0.6]], [[0.4, 0.5, 0.6, 0.7]]],
-      attention_weights: [
-        [
-          [0.35, 0.25, 0.18, 0.12, 0.10],
-          [0.22, 0.38, 0.18, 0.12, 0.10],
-          [0.15, 0.18, 0.40, 0.15, 0.12],
-          [0.12, 0.15, 0.20, 0.38, 0.15],
-          [0.10, 0.12, 0.16, 0.20, 0.42]
-        ],
-        [
-          [0.28, 0.26, 0.20, 0.14, 0.12],
-          [0.20, 0.32, 0.24, 0.14, 0.10],
-          [0.16, 0.20, 0.34, 0.18, 0.12],
-          [0.14, 0.16, 0.22, 0.30, 0.18],
-          [0.12, 0.14, 0.18, 0.22, 0.34]
-        ]
-      ],
-      ffn_output: [
-        [0.50, -0.30, 0.85, 0.15, -0.62, 0.45, 0.30, -0.17],
-        [0.55, -0.25, 0.80, 0.20, -0.55, 0.50, 0.35, -0.12],
-        [0.45, -0.32, 0.90, 0.10, -0.68, 0.42, 0.28, -0.19],
-        [0.50, -0.28, 0.83, 0.17, -0.60, 0.47, 0.32, -0.15],
-        [0.52, -0.27, 0.82, 0.18, -0.58, 0.48, 0.33, -0.14]
-      ],
-      layer_output: [
-        [1.15, 0.90, 1.28, 0.82, -0.35, -0.45, -0.26, -0.55],
-        [1.08, 1.15, 0.85, 0.94, -0.46, -0.36, -0.55, -0.25],
-        [0.95, 0.84, 1.06, 1.21, -0.25, -0.46, -0.35, -0.45],
-        [1.21, 1.05, 0.94, 0.75, -0.55, -0.25, -0.46, -0.35],
-        [0.85, 1.22, 1.15, 0.91, -0.35, -0.55, -0.26, -0.45]
-      ]
-    }
-  },
-  decoder_steps: [
-    {
-      step_index: 0,
-      current_tokens: ["<s>"],
-      current_token_ids: [1],
-      embeddings: [[0.5, 0.4, 0.6, 0.3, 0.2, 0.1, 0.3, 0.5]],
-      causal_mask: [[1.0]],
-      masked_self_attention: {
-        q: [[[0.5, 0.4, 0.3, 0.6]], [[0.4, 0.5, 0.6, 0.3]]],
-        k: [[[0.5, 0.4, 0.3, 0.6]], [[0.4, 0.5, 0.6, 0.3]]],
-        v: [[[0.6, 0.5, 0.4, 0.7]], [[0.5, 0.6, 0.7, 0.4]]],
-        attention_weights: [[[1.0]], [[1.0]]]
-      },
-      cross_attention: {
-        q: [[[0.6, 0.5, 0.4, 0.7]], [[0.5, 0.6, 0.7, 0.4]]],
-        k: [
-          [[0.7, 0.5, 0.3, 0.6], [0.8, 0.8, 0.3, 0.4], [0.4, 0.7, 0.6, 0.5], [0.5, 0.6, 0.7, 0.6], [0.6, 0.7, 0.4, 0.5]],
-          [[0.4, 0.5, 0.6, 0.7], [0.6, 0.4, 0.7, 0.5], [0.5, 0.6, 0.4, 0.8], [0.5, 0.6, 0.5, 0.6], [0.7, 0.5, 0.5, 0.4]]
-        ],
-        v: [
-          [[1.0, 0.5, 0.4, 0.8], [0.9, 0.7, 0.6, 0.5], [0.6, 0.9, 0.8, 0.4], [0.7, 0.8, 0.5, 0.9], [0.8, 0.6, 0.7, 0.7]],
-          [[0.5, 0.6, 0.9, 0.8], [0.7, 0.5, 0.8, 0.7], [0.8, 0.7, 0.6, 0.9], [0.6, 0.8, 0.7, 0.6], [0.9, 0.7, 0.5, 0.8]]
-        ],
-        attention_weights: [
-          [[0.32, 0.28, 0.18, 0.12, 0.10]],
-          [[0.25, 0.30, 0.22, 0.13, 0.10]]
-        ]
-      },
-      ffn_output: [[0.55, -0.22, 0.82, 0.18, -0.60, 0.45, 0.32, -0.14]],
-      top_candidates: [
-        { id: 17, token: "thấu", prob: 0.6726, logit: 4.0176 },
-        { id: 18, token: "hiểu", prob: 0.1512, logit: 2.5281 },
-        { id: 19, token: "đồng", prob: 0.0824, logit: 1.9123 },
-        { id: 20, token: "thuận", prob: 0.0512, logit: 1.4521 },
-        { id: 21, token: "hòa", prob: 0.0426, logit: 1.2514 }
-      ],
-      next_token: "thấu",
-      next_token_id: 17,
-      all_probabilities: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.6726, 0.1512, 0.0824, 0.0512, 0.0426, 0.01, 0.01, 0.01]
-    },
-    {
-      step_index: 1,
-      current_tokens: ["<s>", "thấu"],
-      current_token_ids: [1, 17],
-      embeddings: [
-        [0.5, 0.4, 0.6, 0.3, 0.2, 0.1, 0.3, 0.5],
-        [0.9, 0.8, 1.0, 0.7, 0.1, 0.3, 0.2, 0.4]
-      ],
-      causal_mask: [
-        [1.0, 0.0],
-        [1.0, 1.0]
-      ],
-      masked_self_attention: {
-        q: [
-          [[0.5, 0.4, 0.3, 0.6], [0.8, 0.7, 0.5, 0.6]],
-          [[0.4, 0.5, 0.6, 0.3], [0.7, 0.6, 0.5, 0.5]]
-        ],
-        k: [
-          [[0.5, 0.4, 0.3, 0.6], [0.8, 0.7, 0.5, 0.6]],
-          [[0.4, 0.5, 0.6, 0.3], [0.7, 0.6, 0.5, 0.5]]
-        ],
-        v: [
-          [[0.6, 0.5, 0.4, 0.7], [0.9, 0.8, 0.6, 0.7]],
-          [[0.5, 0.6, 0.7, 0.4], [0.8, 0.7, 0.6, 0.6]]
-        ],
-        attention_weights: [
-          [[1.0, 0.0], [0.38, 0.62]],
-          [[1.0, 0.0], [0.42, 0.58]]
-        ]
-      },
-      cross_attention: {
-        q: [
-          [[0.6, 0.5, 0.4, 0.7], [0.9, 0.8, 0.6, 0.7]],
-          [[0.5, 0.6, 0.7, 0.4], [0.8, 0.7, 0.6, 0.6]]
-        ],
-        k: [
-          [[0.7, 0.5, 0.3, 0.6], [0.8, 0.8, 0.3, 0.4], [0.4, 0.7, 0.6, 0.5], [0.5, 0.6, 0.7, 0.6], [0.6, 0.7, 0.4, 0.5]],
-          [[0.4, 0.5, 0.6, 0.7], [0.6, 0.4, 0.7, 0.5], [0.5, 0.6, 0.4, 0.8], [0.5, 0.6, 0.5, 0.6], [0.7, 0.5, 0.5, 0.4]]
-        ],
-        v: [
-          [[1.0, 0.5, 0.4, 0.8], [0.9, 0.7, 0.6, 0.5], [0.6, 0.9, 0.8, 0.4], [0.7, 0.8, 0.5, 0.9], [0.8, 0.6, 0.7, 0.7]],
-          [[0.5, 0.6, 0.9, 0.8], [0.7, 0.5, 0.8, 0.7], [0.8, 0.7, 0.6, 0.9], [0.6, 0.8, 0.7, 0.6], [0.9, 0.7, 0.5, 0.8]]
-        ],
-        attention_weights: [
-          [
-            [0.32, 0.28, 0.18, 0.12, 0.10],
-            [0.26, 0.36, 0.20, 0.10, 0.08]
-          ],
-          [
-            [0.25, 0.30, 0.22, 0.13, 0.10],
-            [0.20, 0.38, 0.22, 0.11, 0.09]
-          ]
-        ]
-      },
-      ffn_output: [
-        [0.55, -0.22, 0.82, 0.18, -0.60, 0.45, 0.32, -0.14],
-        [0.62, -0.18, 0.88, 0.22, -0.55, 0.51, 0.38, -0.10]
-      ],
-      top_candidates: [
-        { id: 18, token: "hiểu", prob: 0.7120, logit: 4.1820 },
-        { id: 19, token: "đồng", prob: 0.1420, logit: 2.4510 },
-        { id: 20, token: "thuận", prob: 0.0780, logit: 1.8210 },
-        { id: 21, token: "hòa", prob: 0.0410, logit: 1.1520 },
-        { id: 22, token: "hợp", prob: 0.0270, logit: 0.8520 }
-      ],
-      next_token: "hiểu",
-      next_token_id: 18,
-      all_probabilities: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.712, 0.142, 0.078, 0.041, 0.027, 0.01, 0.01]
-    },
-    {
-      step_index: 2,
-      current_tokens: ["<s>", "thấu", "hiểu"],
-      current_token_ids: [1, 17, 18],
-      embeddings: [
-        [0.5, 0.4, 0.6, 0.3, 0.2, 0.1, 0.3, 0.5],
-        [0.9, 0.8, 1.0, 0.7, 0.1, 0.3, 0.2, 0.4],
-        [0.8, 0.9, 0.9, 0.8, 0.2, 0.2, 0.3, 0.3]
-      ],
-      causal_mask: [
-        [1.0, 0.0, 0.0],
-        [1.0, 1.0, 0.0],
-        [1.0, 1.0, 1.0]
-      ],
-      masked_self_attention: {
-        q: [
-          [[0.5, 0.4, 0.3, 0.6], [0.8, 0.7, 0.5, 0.6], [0.7, 0.8, 0.6, 0.5]],
-          [[0.4, 0.5, 0.6, 0.3], [0.7, 0.6, 0.5, 0.5], [0.6, 0.7, 0.5, 0.6]]
-        ],
-        k: [
-          [[0.5, 0.4, 0.3, 0.6], [0.8, 0.7, 0.5, 0.6], [0.7, 0.8, 0.6, 0.5]],
-          [[0.4, 0.5, 0.6, 0.3], [0.7, 0.6, 0.5, 0.5], [0.6, 0.7, 0.5, 0.6]]
-        ],
-        v: [
-          [[0.6, 0.5, 0.4, 0.7], [0.9, 0.8, 0.6, 0.7], [0.8, 0.9, 0.7, 0.6]],
-          [[0.5, 0.6, 0.7, 0.4], [0.8, 0.7, 0.6, 0.6], [0.7, 0.8, 0.6, 0.7]]
-        ],
-        attention_weights: [
-          [
-            [1.0, 0.0, 0.0],
-            [0.38, 0.62, 0.0],
-            [0.24, 0.36, 0.40]
-          ],
-          [
-            [1.0, 0.0, 0.0],
-            [0.42, 0.58, 0.0],
-            [0.26, 0.34, 0.40]
-          ]
-        ]
-      },
-      cross_attention: {
-        q: [
-          [[0.6, 0.5, 0.4, 0.7], [0.9, 0.8, 0.6, 0.7], [0.8, 0.9, 0.7, 0.6]],
-          [[0.5, 0.6, 0.7, 0.4], [0.8, 0.7, 0.6, 0.6], [0.7, 0.8, 0.6, 0.7]]
-        ],
-        k: [
-          [[0.7, 0.5, 0.3, 0.6], [0.8, 0.8, 0.3, 0.4], [0.4, 0.7, 0.6, 0.5], [0.5, 0.6, 0.7, 0.6], [0.6, 0.7, 0.4, 0.5]],
-          [[0.4, 0.5, 0.6, 0.7], [0.6, 0.4, 0.7, 0.5], [0.5, 0.6, 0.4, 0.8], [0.5, 0.6, 0.5, 0.6], [0.7, 0.5, 0.5, 0.4]]
-        ],
-        v: [
-          [[1.0, 0.5, 0.4, 0.8], [0.9, 0.7, 0.6, 0.5], [0.6, 0.9, 0.8, 0.4], [0.7, 0.8, 0.5, 0.9], [0.8, 0.6, 0.7, 0.7]],
-          [[0.5, 0.6, 0.9, 0.8], [0.7, 0.5, 0.8, 0.7], [0.8, 0.7, 0.6, 0.9], [0.6, 0.8, 0.7, 0.6], [0.9, 0.7, 0.5, 0.8]]
-        ],
-        attention_weights: [
-          [
-            [0.32, 0.28, 0.18, 0.12, 0.10],
-            [0.26, 0.36, 0.20, 0.10, 0.08],
-            [0.18, 0.24, 0.32, 0.16, 0.10]
-          ],
-          [
-            [0.25, 0.30, 0.22, 0.13, 0.10],
-            [0.20, 0.38, 0.22, 0.11, 0.09],
-            [0.16, 0.26, 0.34, 0.14, 0.10]
-          ]
-        ]
-      },
-      ffn_output: [
-        [0.55, -0.22, 0.82, 0.18, -0.60, 0.45, 0.32, -0.14],
-        [0.62, -0.18, 0.88, 0.22, -0.55, 0.51, 0.38, -0.10],
-        [0.68, -0.15, 0.92, 0.25, -0.50, 0.55, 0.42, -0.08]
-      ],
-      top_candidates: [
-        { id: 19, token: "đồng", prob: 0.6950, logit: 4.1200 },
-        { id: 20, token: "thuận", prob: 0.1650, logit: 2.5100 },
-        { id: 21, token: "hòa", prob: 0.0750, logit: 1.7500 },
-        { id: 22, token: "hợp", prob: 0.0450, logit: 1.2500 },
-        { id: 23, token: "kết", prob: 0.0200, logit: 0.8500 }
-      ],
-      next_token: "đồng",
-      next_token_id: 19,
-      all_probabilities: [0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.01, 0.02, 0.03, 0.695, 0.165, 0.075, 0.045, 0.02, 0.01]
-    }
-  ],
-  final_generated_tokens: ["<s>", "thấu", "hiểu", "đồng", "thuận"],
-  output_sentence: "thấu hiểu đồng thuận"
-};
+export class ApiError extends Error {
+  status?: number;
+  canFallbackToSim: boolean;
 
-export async function fetchTrace(sourceText: string, maxDecodeSteps = 4): Promise<TransformerTrace> {
-  try {
-    const res = await fetch(`${API_BASE}/api/trace`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        source_text: sourceText,
-        max_decode_steps: maxDecodeSteps
-      })
-    });
-    if (!res.ok) {
-      console.warn(`Backend returned ${res.status}, using grounded fallback.`);
-      return FALLBACK_TRACE;
-    }
-    const data = await res.json();
-    return data as TransformerTrace;
-  } catch (err) {
-    console.warn("Could not connect to FastAPI backend, falling back to local trace:", err);
-    return FALLBACK_TRACE;
+  constructor(message: string, status?: number, canFallbackToSim = true) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.canFallbackToSim = canFallbackToSim;
   }
 }
 
-export async function checkBackendHealth(): Promise<boolean> {
+/**
+ * Fetch a genuine Keras 3 forward-pass trace from the FastAPI backend.
+ * Never silently returns fake data or fallbacks if the backend is down.
+ */
+export async function fetchKerasTrace(
+  sourceText: string,
+  targetPrompt?: string,
+  maxDecodeSteps = 4
+): Promise<TransformerTrace> {
+  const url = `${API_BASE}/api/trace`;
+
+  let response: Response;
   try {
-    const res = await fetch(`${API_BASE}/api/health`);
-    return res.ok;
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        source_text: sourceText,
+        target_prompt: targetPrompt,
+        max_decode_steps: maxDecodeSteps
+      })
+    });
+  } catch (netErr: any) {
+    throw new ApiError(
+      `Không kết nối được Keras backend tại ${API_BASE}. Bạn có thể chuyển sang chế độ Educational Simulation để tiếp tục.`,
+      0,
+      true
+    );
+  }
+
+  if (!response.ok) {
+    let errorDetail = `Lỗi máy chủ (${response.status})`;
+    try {
+      const errJson = await response.json();
+      if (errJson.detail) errorDetail = errJson.detail;
+    } catch {
+      // ignore json parse error
+    }
+    throw new ApiError(errorDetail, response.status, true);
+  }
+
+  const rawData: TransformerTrace = await response.json();
+
+  // Attach or verify metadata
+  if (!rawData.metadata) {
+    const meta: TraceMetadata = {
+      runId: `keras_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      source: 'keras',
+      inputText: sourceText,
+      modelName: 'Keras 3 Educational Transformer (Vaswani 2017)',
+      modelConfig: {
+        numEncoderLayers: 2,
+        numDecoderLayers: 2,
+        dModel: rawData.d_model || 8,
+        numHeads: rawData.num_heads || 2,
+        dFF: rawData.d_ff || 16,
+        vocabSize: rawData.vocab?.length || 25
+      },
+      createdAt: new Date().toISOString(),
+      isUntrained: true,
+      disclaimer: 'Trace được trích xuất từ các layer Keras 3 thật (Embedding, MHA, LayerNorm, FFN, Causal Mask, Cross-Attention).'
+    };
+    rawData.metadata = meta;
+  } else {
+    rawData.metadata.source = 'keras';
+  }
+
+  // Validate trace
+  const validation = validateTransformerTrace(rawData);
+  if (!validation.valid) {
+    throw new ApiError(`Dữ liệu Keras trace không hợp lệ: ${validation.errors.join(', ')}`, 502, true);
+  }
+
+  return rawData;
+}
+
+/**
+ * Fetch sample demonstration sentences from the backend or fallback presets.
+ */
+export async function fetchSamples(): Promise<Array<{ id: string; label: string; text: string; description: string }>> {
+  try {
+    const res = await fetch(`${API_BASE}/api/samples`);
+    if (res.ok) {
+      const data = await res.json();
+      if (data.samples && Array.isArray(data.samples)) {
+        return data.samples;
+      }
+    }
   } catch {
-    return false;
+    // Backend offline; return standard samples
+  }
+
+  return [
+    {
+      id: "interview_good",
+      label: "AI Interview - Giải quyết mâu thuẫn (Mẫu)",
+      text: "Lắng nghe ý kiến nhóm giải quyết mâu thuẫn",
+      description: "Câu trả lời đúng trọng tâm thể hiện kỹ năng lắng nghe và hòa giải nhóm."
+    },
+    {
+      id: "interview_contrast",
+      label: "AI Interview - Lạc đề kỹ thuật (Đối chứng)",
+      text: "Tôi biết python sql mô hình code",
+      description: "Câu trả lời lạc đề, chỉ liệt kê công nghệ mà không trả lời về xử lý mâu thuẫn."
+    },
+    {
+      id: "classic_2017",
+      label: "Transformer 2017 - Attention Is All You Need",
+      text: "Ý kiến thảo luận giải quyết đồng thuận",
+      description: "Kịch bản tiêu chuẩn kiểm chứng luồng Encoder - Masked Decoder - Cross Attention."
+    }
+  ];
+}
+
+/**
+ * Check backend health status without throwing an unhandled exception.
+ */
+export async function checkBackendHealth(): Promise<{ isOnline: boolean; info?: any }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/health`, { method: 'GET' });
+    if (res.ok) {
+      const info = await res.json();
+      return { isOnline: true, info };
+    }
+  } catch {
+    // Offline
+  }
+  return { isOnline: false };
+}
+
+/**
+ * Execute trace generation based on explicit simulation mode selected by user.
+ */
+export async function executeTrace(
+  sourceText: string,
+  mode: 'keras' | 'simulated'
+): Promise<TransformerTrace> {
+  if (mode === 'keras') {
+    return await fetchKerasTrace(sourceText);
+  } else {
+    const trace = generateDemoTrace(sourceText);
+    const validation = validateTransformerTrace(trace);
+    if (!validation.valid) {
+      throw new ApiError(`Mô phỏng toán học không hợp lệ: ${validation.errors.join(', ')}`, 500, false);
+    }
+    return trace;
   }
 }
