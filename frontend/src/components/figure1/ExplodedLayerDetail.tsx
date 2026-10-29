@@ -1,28 +1,34 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Text } from '@react-three/drei';
 import type { LayerAttentionTrace, DecoderStepTrace } from '../../types/trace';
 
 interface ExplodedLayerDetailProps {
   layerType: 'encoder' | 'decoder';
-  layerIndex: number;
+  layerIndex?: number;
   encoderTrace?: LayerAttentionTrace;
   decoderStepTrace?: DecoderStepTrace;
+  dModel?: number;
+  dFF?: number;
   onClose: () => void;
 }
 
 export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
   layerType,
-  layerIndex,
+  layerIndex = 0,
+  dModel = 8,
+  dFF = 16,
   onClose
 }) => {
+  const [activeLayer, setActiveLayer] = useState<number>(layerIndex);
   const isEncoder = layerType === 'encoder';
+  const dK = dModel / 2;
 
   return (
     <group position={[0, 3.5, 3.5]}>
       {/* Background Dimming Backdrop Plate */}
       <mesh position={[0, 0, -1]}>
         <planeGeometry args={[14, 11]} />
-        <meshBasicMaterial color="#020617" transparent={true} opacity={0.88} />
+        <meshBasicMaterial color="#020617" transparent={true} opacity={0.92} />
       </mesh>
 
       {/* Header Plaque */}
@@ -30,12 +36,23 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
         <boxGeometry args={[12, 0.7, 0.1]} />
         <meshStandardMaterial color="#0f172a" metalness={0.8} roughness={0.3} />
       </mesh>
-      <Text position={[0, 4.8, 0.1]} fontSize={0.28} color="#38bdf8" anchorX="center" anchorY="middle">
-        {isEncoder 
-          ? `ENCODER BLOCK (LAYER ${layerIndex}) — EXPLODED SUBLAYER MECHANISM`
-          : `DECODER BLOCK (LAYER ${layerIndex}) — EXPLODED SUBLAYER MECHANISM`
+      <Text position={[0, 4.8, 0.1]} fontSize={0.25} color="#38bdf8" anchorX="center" anchorY="middle">
+        {isEncoder
+          ? `ENCODER BLOCK (LAYER ${activeLayer}) — EXPLODED SUBLAYER MECHANISM`
+          : `DECODER BLOCK (LAYER ${activeLayer}) — EXPLODED SUBLAYER MECHANISM`
         }
       </Text>
+
+      {/* Layer Toggle Button in 3D */}
+      <group position={[3.6, 4.8, 0.1]} onClick={() => setActiveLayer(activeLayer === 0 ? 1 : 0)}>
+        <mesh>
+          <boxGeometry args={[1.8, 0.45, 0.1]} />
+          <meshStandardMaterial color="#0284c7" />
+        </mesh>
+        <Text position={[0, 0, 0.08]} fontSize={0.14} color="#ffffff" anchorX="center" anchorY="middle">
+          {activeLayer === 0 ? 'Switch to Layer 1' : 'Switch to Layer 0'}
+        </Text>
+      </group>
 
       {/* Close Button in 3D */}
       <group position={[5.4, 4.8, 0.1]} onClick={onClose}>
@@ -58,19 +75,19 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
               <meshStandardMaterial color="#0284c7" />
             </mesh>
             <Text position={[0, 1.8, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
-              1. MULTI-HEAD SELF-ATTENTION (h=2)
+              1. MULTI-HEAD SELF-ATTENTION (h=2, d_k={dK})
             </Text>
 
             {/* Q, K, V Projection Blocks */}
             {[-1.5, 0, 1.5].map((xOff, idx) => {
-              const name = idx === 0 ? 'W_Q (Linear)' : idx === 1 ? 'W_K (Linear)' : 'W_V (Linear)';
+              const name = idx === 0 ? `W_Q (${dModel}→${dModel})` : idx === 1 ? `W_K (${dModel}→${dModel})` : `W_V (${dModel}→${dModel})`;
               return (
                 <group key={`qkv-${idx}`} position={[xOff, 0.9, 0]}>
                   <mesh>
-                    <boxGeometry args={[1.2, 0.6, 0.2]} />
+                    <boxGeometry args={[1.3, 0.6, 0.2]} />
                     <meshStandardMaterial color="#1e3a8a" />
                   </mesh>
-                  <Text position={[0, 0, 0.12]} fontSize={0.14} color="#60a5fa" anchorX="center">
+                  <Text position={[0, 0, 0.12]} fontSize={0.13} color="#60a5fa" anchorX="center">
                     {name}
                   </Text>
                 </group>
@@ -86,7 +103,7 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
               Scaled Dot-Product Attention
             </Text>
             <Text position={[0, -0.2, 0.12]} fontSize={0.13} color="#f59e0b" anchorX="center">
-              Softmax( (Q · K^T) / √d_k ) · V
+              Softmax( (Q · K^T) / √{dK} ) · V
             </Text>
 
             {/* Output Projection W_O */}
@@ -95,7 +112,7 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
               <meshStandardMaterial color="#1e3a8a" />
             </mesh>
             <Text position={[0, -1.2, 0.12]} fontSize={0.14} color="#60a5fa" anchorX="center">
-              W_O Output Projection
+              W_O Output Projection ({dModel}→{dModel})
             </Text>
           </group>
 
@@ -123,10 +140,10 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
               2. FEED-FORWARD NETWORK (FFN)
             </Text>
             <Text position={[0, 0.1, 0.15]} fontSize={0.14} color="#bae6fd" anchorX="center">
-              Dense(d_ff=32, activation="relu")
+              Dense(d_ff={dFF}, activation="relu")
             </Text>
             <Text position={[0, -0.3, 0.15]} fontSize={0.14} color="#bae6fd" anchorX="center">
-              Dense(d_model=16, linear)
+              Dense(d_model={dModel}, linear)
             </Text>
           </group>
 
@@ -150,54 +167,64 @@ export const ExplodedLayerDetail: React.FC<ExplodedLayerDetailProps> = ({
           {/* Sublayer 1: Masked Self-Attention */}
           <group position={[-3.6, 1.8, 0]}>
             <mesh>
-              <boxGeometry args={[5.2, 1.6, 0.2]} />
-              <meshStandardMaterial color="#b45309" />
+              <boxGeometry args={[5.2, 1.4, 0.2]} />
+              <meshStandardMaterial color="#c2410c" />
             </mesh>
-            <Text position={[0, 0.4, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
-              1. MASKED MULTI-HEAD ATTENTION
+            <Text position={[0, 0.3, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
+              1. MASKED SELF-ATTENTION
             </Text>
-            <Text position={[0, 0.0, 0.15]} fontSize={0.13} color="#fde68a" anchorX="center">
-              Causal Mask M_ij = -∞ for j &gt; i
-            </Text>
-            <Text position={[0, -0.35, 0.15]} fontSize={0.12} color="#fca5a5" anchorX="center">
-              Zeros out future token lookahead
+            <Text position={[0, -0.2, 0.15]} fontSize={0.13} color="#fdba74" anchorX="center">
+              Causal Mask M_ij = -∞ (j &gt; i)
             </Text>
           </group>
 
-          {/* Sublayer 2: Cross-Attention */}
-          <group position={[-3.6, -1.0, 0]}>
+          {/* Sublayer 2: Add & Norm 1 */}
+          <group position={[-3.6, -0.1, 0]}>
             <mesh>
-              <boxGeometry args={[5.2, 1.8, 0.2]} />
-              <meshStandardMaterial color="#ea580c" />
-            </mesh>
-            <Text position={[0, 0.5, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
-              2. ENCODER-DECODER CROSS-ATTENTION
-            </Text>
-            <Text position={[0, 0.1, 0.15]} fontSize={0.13} color="#ffedd5" anchorX="center">
-              Q: from Decoder Sublayer 1
-            </Text>
-            <Text position={[0, -0.25, 0.15]} fontSize={0.13} color="#fed7aa" anchorX="center">
-              K, V: from Final Encoder Stack Output
-            </Text>
-          </group>
-
-          {/* Sublayer 3: FFN & Add Norms */}
-          <group position={[3.6, 0.4, 0]}>
-            <mesh>
-              <boxGeometry args={[5.2, 2.4, 0.2]} />
+              <boxGeometry args={[5.2, 1.0, 0.2]} />
               <meshStandardMaterial color="#0f766e" />
             </mesh>
-            <Text position={[0, 0.8, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
-              3. FEED FORWARD &amp; 3 ADD-NORMS
+            <Text position={[0, 0, 0.15]} fontSize={0.18} color="#ffffff" anchorX="center">
+              ADD &amp; NORM 1 (Queries Generated)
             </Text>
-            <Text position={[0, 0.35, 0.15]} fontSize={0.13} color="#99f6e4" anchorX="center">
-              3 Residual Bypass Paths
+          </group>
+
+          {/* Sublayer 3: Cross-Attention */}
+          <group position={[3.6, 1.8, 0]}>
+            <mesh>
+              <boxGeometry args={[5.2, 1.4, 0.2]} />
+              <meshStandardMaterial color="#b45309" />
+            </mesh>
+            <Text position={[0, 0.3, 0.15]} fontSize={0.2} color="#ffffff" anchorX="center">
+              2. ENCODER-DECODER CROSS-ATTN
             </Text>
-            <Text position={[0, 0.0, 0.15]} fontSize={0.13} color="#ffffff" anchorX="center">
-              FFN: max(0, y W_1 + b_1) W_2 + b_2
+            <Text position={[0, -0.2, 0.15]} fontSize={0.13} color="#fde68a" anchorX="center">
+              Q from Dec, K/V from Enc Memory
             </Text>
-            <Text position={[0, -0.45, 0.15]} fontSize={0.13} color="#99f6e4" anchorX="center">
-              Final LayerNorm before Linear &amp; Softmax
+          </group>
+
+          {/* Sublayer 4: Add & Norm 2 */}
+          <group position={[3.6, -0.1, 0]}>
+            <mesh>
+              <boxGeometry args={[5.2, 1.0, 0.2]} />
+              <meshStandardMaterial color="#0f766e" />
+            </mesh>
+            <Text position={[0, 0, 0.15]} fontSize={0.18} color="#ffffff" anchorX="center">
+              ADD &amp; NORM 2
+            </Text>
+          </group>
+
+          {/* Sublayer 5: FFN & Add & Norm 3 */}
+          <group position={[0, -2.4, 0]}>
+            <mesh>
+              <boxGeometry args={[8.0, 1.2, 0.2]} />
+              <meshStandardMaterial color="#0369a1" />
+            </mesh>
+            <Text position={[0, 0.2, 0.15]} fontSize={0.18} color="#ffffff" anchorX="center">
+              3. FEED-FORWARD NETWORK &amp; ADD &amp; NORM 3
+            </Text>
+            <Text position={[0, -0.2, 0.15]} fontSize={0.13} color="#bae6fd" anchorX="center">
+              ReLU(xW1 + b1)W2 + b2 (d_ff={dFF}, d_model={dModel})
             </Text>
           </group>
         </group>

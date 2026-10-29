@@ -1,6 +1,7 @@
 """
 Automated Verification Test Suite for Transformer 2017 3D Simulator.
-Verifies genuine Keras 3 layers, causal masking, cross-attention, and JSON trace generation.
+Verifies genuine Keras 3 layers, causal masking, cross-attention, both Encoder & Decoder layers,
+linear logits, probabilities, and JSON trace generation.
 """
 
 import os
@@ -9,7 +10,7 @@ sys.path.insert(0, os.path.abspath("."))
 
 import pytest
 import numpy as np
-from transformer_3d_simulator.backend.transformer_keras_2017 import (
+from backend.transformer_keras_2017 import (
     EducationalTransformer2017,
     SinusoidalPositionalEncoding
 )
@@ -43,14 +44,26 @@ def test_encoder_attention_shapes_and_weights():
     trace = model.run_trace("Lắng nghe ý kiến nhóm")
     enc = trace["encoder"]
     seq_len = len(enc["source_tokens"])
-    assert seq_len == 5  # ["lắng", "nghe", "ý", "kiến", "nhóm"]
-    
-    attn_weights = np.array(enc["layer_1"]["attention_weights"])
-    # Shape: [num_heads=2, seq_len=5, seq_len=5]
-    assert attn_weights.shape == (2, seq_len, seq_len)
-    for h in range(2):
-        for i in range(seq_len):
-            assert np.isclose(attn_weights[h, i].sum(), 1.0, atol=1e-4)
+    assert seq_len == 5
+
+    # Verify both Encoder Layer 1 and Layer 2
+    for l_key in ["layer_1", "layer_2"]:
+        layer = enc[l_key]
+        attn_weights = np.array(layer["attention_weights"])
+        assert attn_weights.shape == (2, seq_len, seq_len)
+        for h in range(2):
+            for i in range(seq_len):
+                assert np.isclose(attn_weights[h, i].sum(), 1.0, atol=1e-4)
+
+        # Check Q, K, V shapes: [num_heads=2, seq_len=5, d_k=4]
+        assert np.array(layer["q"]).shape == (2, seq_len, 4)
+        assert np.array(layer["k"]).shape == (2, seq_len, 4)
+        assert np.array(layer["v"]).shape == (2, seq_len, 4)
+
+        # Residual and output shapes: [seq_len=5, d_model=8]
+        assert np.array(layer["residual_1"]).shape == (seq_len, 8)
+        assert np.array(layer["residual_2"]).shape == (seq_len, 8)
+        assert np.array(layer["layer_output"]).shape == (seq_len, 8)
 
 
 def test_decoder_masked_and_cross_attention():
@@ -59,23 +72,45 @@ def test_decoder_masked_and_cross_attention():
     dec_steps = trace["decoder_steps"]
     assert len(dec_steps) >= 2
 
-    # Step 1 has current_tokens: ["<s>", "thấu"]
+    # Step 1 has 2 tokens
     step1 = dec_steps[1]
-    masked_attn = np.array(step1["masked_self_attention"]["attention_weights"])
     cur_len = len(step1["current_tokens"])
     assert cur_len == 2
-    assert masked_attn.shape == (2, 2, 2)
-    
-    # Position 0 cannot attend to position 1 (future token masked to 0.0)
-    assert np.isclose(masked_attn[0, 0, 1], 0.0, atol=1e-5)
-    assert np.isclose(masked_attn[1, 0, 1], 0.0, atol=1e-5)
 
-    # Cross attention: [num_heads=2, cur_len=2, enc_len=5]
-    cross_attn = np.array(step1["cross_attention"]["attention_weights"])
-    assert cross_attn.shape == (2, 2, 5)
-    for h in range(2):
-        for i in range(cur_len):
-            assert np.isclose(cross_attn[h, i].sum(), 1.0, atol=1e-4)
+    # Check Layer 0 & Layer 1 presence in step
+    assert "layer_0" in step1
+    assert "layer_1" in step1
+
+    for l_key in ["layer_0", "layer_1"]:
+        l_trace = step1[l_key]
+        masked_attn = np.array(l_trace["masked_self_attention"]["attention_weights"])
+        assert masked_attn.shape == (2, cur_len, cur_len)
+
+        # Position 0 cannot attend to future token at position 1
+        assert np.isclose(masked_attn[0, 0, 1], 0.0, atol=1e-5)
+        assert np.isclose(masked_attn[1, 0, 1], 0.0, atol=1e-5)
+
+        # Cross attention: [num_heads=2, cur_len=2, enc_len=5]
+        cross_attn = np.array(l_trace["cross_attention"]["attention_weights"])
+        assert cross_attn.shape == (2, cur_len, 5)
+        for h in range(2):
+            for i in range(cur_len):
+                assert np.isclose(cross_attn[h, i].sum(), 1.0, atol=1e-4)
+
+
+def test_linear_logits_and_probabilities():
+    model = EducationalTransformer2017(d_model=8, num_heads=2)
+    trace = model.run_trace("Lắng nghe ý kiến nhóm", max_decode_steps=2)
+    step0 = trace["decoder_steps"][0]
+
+    logits = np.array(step0["logits"])
+    probs = np.array(step0["all_probabilities"])
+
+    assert len(logits) == model.vocab_size
+    assert len(probs) == model.vocab_size
+    # Softmax probabilities must sum to 1.0
+    assert np.isclose(probs.sum(), 1.0, atol=1e-3)
+    assert np.all(probs >= 0.0)
 
 
 def test_autoregressive_generation():
@@ -84,3 +119,8 @@ def test_autoregressive_generation():
     assert len(trace["final_generated_tokens"]) > 1
     assert isinstance(trace["output_sentence"], str)
     assert len(trace["output_sentence"]) > 0
+
+    # Verify metadata
+    assert "metadata" in trace
+    assert trace["metadata"]["source"] == "keras"
+    assert trace["metadata"]["isUntrained"] is True

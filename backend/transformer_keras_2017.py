@@ -8,6 +8,7 @@ Multi-Head Attention, Add & LayerNorm, FFN, Masked Causal Attention, Cross-Atten
 import os
 os.environ["KERAS_BACKEND"] = "tensorflow"
 import math
+import time
 import numpy as np
 import keras
 from keras import layers, ops
@@ -161,6 +162,7 @@ class EncoderLayer(layers.Layer):
                 "attention": attn_trace,
                 "residual_1": ops.convert_to_numpy(x_norm1[0]),
                 "ffn": ffn_trace,
+                "residual_2": ops.convert_to_numpy(out[0]),
                 "layer_output": ops.convert_to_numpy(out[0])
             }
             return out, layer_trace
@@ -205,6 +207,7 @@ class DecoderLayer(layers.Layer):
                 "cross_attention": cross_attn_trace,
                 "residual_2": ops.convert_to_numpy(x_norm2[0]),
                 "ffn": ffn_trace,
+                "residual_3": ops.convert_to_numpy(out[0]),
                 "layer_output": ops.convert_to_numpy(out[0])
             }
             return out, layer_trace
@@ -214,7 +217,8 @@ class DecoderLayer(layers.Layer):
 class EducationalTransformer2017:
     """
     Full Transformer 2017 Encoder-Decoder Model with grounded trace extraction.
-    Real Keras 3 layers with weights tailored for vivid educational demonstration.
+    Real Keras 3 layers with weights initialized for clean educational demonstration.
+    Does not manipulate logits or claim bilingual semantic fluency without training.
     """
     VOCAB_SOURCE = ["lắng", "nghe", "ý", "kiến", "nhóm", "giải", "quyết", "mâu", "thuẫn"]
     VOCAB_CONTRAST = ["python", "sql", "code", "mô", "hình"]
@@ -253,8 +257,7 @@ class EducationalTransformer2017:
         self._build_and_tune_weights()
 
     def _build_and_tune_weights(self):
-        """Initializes model layers and tunes weights for clean educational visualization."""
-        # 1. Warm-up forward pass to build weights
+        """Initializes model layers and builds weights."""
         dummy_in = ops.convert_to_tensor([[1, 3, 4]], dtype="int32")
         emb = self.token_embedding(dummy_in)
         pos = self.pos_encoding(emb)
@@ -267,41 +270,38 @@ class EducationalTransformer2017:
         dec_out2, _ = self.dec_layer2(dec_out, enc_out2, return_trace=True)
         _ = self.final_linear(dec_out2)
 
-        # 2. Shape embedding matrix for distinct vector clusters
-        # Group 1: Listening & conflict resolution words (positive emotional resonance)
-        # Group 2: Tech words (contrasting axis)
-        emb_weights = np.random.RandomState(42).randn(self.vocab_size, self.d_model).astype(np.float32) * 0.3
-        for tok in self.VOCAB_SOURCE:
-            idx = self.token2id[tok]
-            emb_weights[idx, :4] += 1.2
-            emb_weights[idx, 4:] -= 0.5
-        for tok in self.VOCAB_CONTRAST:
-            idx = self.token2id[tok]
-            emb_weights[idx, :4] -= 0.8
-            emb_weights[idx, 4:] += 1.4
-        for tok in self.VOCAB_TARGET:
-            idx = self.token2id[tok]
-            emb_weights[idx, :4] += 0.9
-            emb_weights[idx, 4:] += 0.2
-
+        # Initialize structured embedding weights with deterministic seed
+        rng = np.random.RandomState(42)
+        emb_weights = rng.randn(self.vocab_size, self.d_model).astype(np.float32) * 0.4
         self.token_embedding.set_weights([emb_weights])
 
     def tokenize(self, text: str, max_len: int = 5):
-        """Tokenize input string into vocab tokens."""
+        """Tokenize input string into vocab tokens with fallback mapping for arbitrary text."""
+        if not text or not text.strip():
+            raise ValueError("source_text cannot be empty")
+
         words = text.lower().replace(",", " ").replace(".", " ").replace("?", " ").replace("!", " ").split()
+        if not words:
+            raise ValueError("No valid words found in input text")
+
         tokens = []
         for w in words:
             if w in self.token2id:
                 tokens.append(w)
             else:
+                found = False
                 for v in self.vocab:
                     if v in w or w in v:
                         tokens.append(v)
+                        found = True
                         break
+                if not found:
+                    # Deterministically map out-of-vocab word using character hash
+                    char_sum = sum(ord(c) for c in w)
+                    mapped_idx = 3 + (char_sum % (self.vocab_size - 3))
+                    tokens.append(self.id2token[mapped_idx])
             if len(tokens) >= max_len:
                 break
-        if not tokens:
-            tokens = ["lắng", "nghe", "ý", "kiến"]
         return tokens
 
     def get_causal_mask(self, seq_len: int):
@@ -341,7 +341,9 @@ class EducationalTransformer2017:
                 "v": enc1_trace["attention"]["v"].tolist(),
                 "raw_scores": enc1_trace["attention"]["raw_scores"].tolist(),
                 "attention_weights": enc1_trace["attention"]["attn_weights"].tolist(),
+                "residual_1": enc1_trace["residual_1"].tolist(),
                 "ffn_output": enc1_trace["ffn"]["output"].tolist(),
+                "residual_2": enc1_trace["residual_2"].tolist(),
                 "layer_output": enc1_trace["layer_output"].tolist()
             },
             "layer_2": {
@@ -350,18 +352,16 @@ class EducationalTransformer2017:
                 "v": enc2_trace["attention"]["v"].tolist(),
                 "raw_scores": enc2_trace["attention"]["raw_scores"].tolist(),
                 "attention_weights": enc2_trace["attention"]["attn_weights"].tolist(),
+                "residual_1": enc2_trace["residual_1"].tolist(),
                 "ffn_output": enc2_trace["ffn"]["output"].tolist(),
+                "residual_2": enc2_trace["residual_2"].tolist(),
                 "layer_output": enc2_trace["layer_output"].tolist()
             }
         }
 
-        # 4. Autoregressive Decoding Simulation
+        # 4. Autoregressive Decoding with genuine Keras logits and softmax
         current_tgt_ids = [self.token2id["<s>"]]
         decoder_steps = []
-
-        # Determine semantic bias based on source words for educationally clear generated outputs
-        is_interview_domain = any(t in self.VOCAB_SOURCE for t in src_tokens)
-        target_pool = self.VOCAB_TARGET if is_interview_domain else self.VOCAB_CONTRAST
 
         for step in range(max_decode_steps):
             tgt_tensor = ops.convert_to_tensor([current_tgt_ids], dtype="int32")
@@ -381,20 +381,11 @@ class EducationalTransformer2017:
                 dec1_out, enc_final, self_mask=causal_mask, return_trace=True
             )
 
-            # Linear projection
-            step_logits = self.final_linear(dec2_out)[:, -1, :] # [1, vocab_size]
+            # Genuine Keras Linear Projection & Softmax (NO silent hand-crafted manipulation!)
+            step_logits = self.final_linear(dec2_out)[:, -1, :]  # [1, vocab_size]
             step_probs = ops.softmax(step_logits, axis=-1)
-            probs_np = ops.convert_to_numpy(step_probs[0]).copy()
-            logits_np = ops.convert_to_numpy(step_logits[0]).copy()
-
-            # Slightly bias towards relevant target vocabulary words so that generation is pedagogically intuitive
-            if step < len(target_pool):
-                favored_token = target_pool[step]
-                favored_id = self.token2id[favored_token]
-                logits_np[favored_id] += 3.5
-                # Recalculate softmax
-                exp_logits = np.exp(logits_np - np.max(logits_np))
-                probs_np = exp_logits / np.sum(exp_logits)
+            probs_np = ops.convert_to_numpy(step_probs[0])
+            logits_np = ops.convert_to_numpy(step_logits[0])
 
             sorted_indices = np.argsort(-probs_np)
             top_candidates = []
@@ -408,17 +399,63 @@ class EducationalTransformer2017:
                 })
 
             next_token_id = int(sorted_indices[0])
+            # Avoid immediately generating start token or padding
             if self.id2token[next_token_id] in ["<pad>", "<s>"]:
                 next_token_id = int(sorted_indices[1])
 
             next_token = self.id2token[next_token_id]
 
+            # Detailed Decoder Layer 0 & Layer 1 traces
             step_trace = {
                 "step_index": step,
                 "current_tokens": [self.id2token[tid] for tid in current_tgt_ids],
                 "current_token_ids": current_tgt_ids,
                 "embeddings": ops.convert_to_numpy(dec_emb[0]).tolist(),
+                "positional_encodings": self.pos_encoding.get_pe(cur_len).tolist(),
                 "causal_mask": mask_matrix_np.tolist(),
+                "layer_0": {
+                    "masked_self_attention": {
+                        "q": dec1_trace["self_attention"]["q"].tolist(),
+                        "k": dec1_trace["self_attention"]["k"].tolist(),
+                        "v": dec1_trace["self_attention"]["v"].tolist(),
+                        "raw_scores": dec1_trace["self_attention"]["raw_scores"].tolist(),
+                        "attention_weights": dec1_trace["self_attention"]["attn_weights"].tolist()
+                    },
+                    "residual_1": dec1_trace["residual_1"].tolist(),
+                    "cross_attention": {
+                        "q": dec1_trace["cross_attention"]["q"].tolist(),
+                        "k": dec1_trace["cross_attention"]["k"].tolist(),
+                        "v": dec1_trace["cross_attention"]["v"].tolist(),
+                        "raw_scores": dec1_trace["cross_attention"]["raw_scores"].tolist(),
+                        "attention_weights": dec1_trace["cross_attention"]["attn_weights"].tolist()
+                    },
+                    "residual_2": dec1_trace["residual_2"].tolist(),
+                    "ffn_output": dec1_trace["ffn"]["output"].tolist(),
+                    "residual_3": dec1_trace["residual_3"].tolist(),
+                    "layer_output": dec1_trace["layer_output"].tolist()
+                },
+                "layer_1": {
+                    "masked_self_attention": {
+                        "q": dec2_trace["self_attention"]["q"].tolist(),
+                        "k": dec2_trace["self_attention"]["k"].tolist(),
+                        "v": dec2_trace["self_attention"]["v"].tolist(),
+                        "raw_scores": dec2_trace["self_attention"]["raw_scores"].tolist(),
+                        "attention_weights": dec2_trace["self_attention"]["attn_weights"].tolist()
+                    },
+                    "residual_1": dec2_trace["residual_1"].tolist(),
+                    "cross_attention": {
+                        "q": dec2_trace["cross_attention"]["q"].tolist(),
+                        "k": dec2_trace["cross_attention"]["k"].tolist(),
+                        "v": dec2_trace["cross_attention"]["v"].tolist(),
+                        "raw_scores": dec2_trace["cross_attention"]["raw_scores"].tolist(),
+                        "attention_weights": dec2_trace["cross_attention"]["attn_weights"].tolist()
+                    },
+                    "residual_2": dec2_trace["residual_2"].tolist(),
+                    "ffn_output": dec2_trace["ffn"]["output"].tolist(),
+                    "residual_3": dec2_trace["residual_3"].tolist(),
+                    "layer_output": dec2_trace["layer_output"].tolist()
+                },
+                # Backward compatibility
                 "masked_self_attention": {
                     "q": dec1_trace["self_attention"]["q"].tolist(),
                     "k": dec1_trace["self_attention"]["k"].tolist(),
@@ -432,6 +469,8 @@ class EducationalTransformer2017:
                     "attention_weights": dec1_trace["cross_attention"]["attn_weights"].tolist()
                 },
                 "ffn_output": dec1_trace["ffn"]["output"].tolist(),
+                "final_hidden": ops.convert_to_numpy(dec2_out[0]).tolist(),
+                "logits": [round(float(l), 4) for l in logits_np],
                 "top_candidates": top_candidates,
                 "next_token": next_token,
                 "next_token_id": next_token_id,
@@ -446,6 +485,23 @@ class EducationalTransformer2017:
         full_generated_tokens = [self.id2token[tid] for tid in current_tgt_ids]
 
         return {
+            "metadata": {
+                "runId": f"keras_{int(time.time()*1000)}",
+                "source": "keras",
+                "inputText": source_text,
+                "modelName": "Keras 3 Educational Transformer (Vaswani 2017)",
+                "modelConfig": {
+                    "numEncoderLayers": 2,
+                    "numDecoderLayers": 2,
+                    "dModel": self.d_model,
+                    "numHeads": self.num_heads,
+                    "dFF": self.d_ff,
+                    "vocabSize": self.vocab_size
+                },
+                "createdAt": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                "isUntrained": True,
+                "disclaimer": "Mô hình giáo dục Keras 3 forward-pass nguyên bản với trọng số khởi tạo chuẩn. Không giả mạo ngữ nghĩa tiếng Việt."
+            },
             "source_text": source_text,
             "d_model": self.d_model,
             "num_heads": self.num_heads,
